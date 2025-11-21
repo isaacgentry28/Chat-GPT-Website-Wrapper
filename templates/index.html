@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document & Web QA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Ask Questions About Your Files & Websites</h1>
+    <div class="nav-links">
+      <a href="{{ url_for('stored') }}">View stored articles</a>
+      <a href="{{ url_for('batch') }}">Batch ingest (up to 10 URLs)</a>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="input-form" id="qa-form">
+      <label for="question">Question:</label>
+      <textarea id="question" name="question" rows="3" required></textarea>
+
+      <label for="files">Upload files (.pdf, .txt, .doc, .docx):</label>
+      <input type="file" id="files" name="files" multiple>
+
+      <label for="urls">Website URLs (one per line):</label>
+      <textarea id="urls" name="urls" rows="3"
+        placeholder="https://example.com/page1&#10;https://example.com/page2"></textarea>
+
+      {% if stored_articles %}
+        <fieldset class="stored-select">
+          <legend>Select stored articles to include (max 10)</legend>
+          <div class="stored-grid">
+            {% for a in stored_articles %}
+              <label class="stored-item">
+                <input type="checkbox" name="stored_ids" value="{{ a.id }}"
+                  {% if selected_ids and (a.id|string) in selected_ids %}checked{% endif %}>
+                <span class="stored-title">{{ a.url or a.source }}</span>
+                <span class="stored-meta">ID {{ a.id }} • {{ a.fetched_at }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+      {% endif %}
+
+      <button type="submit" id="ask-btn">Ask</button>
+      <div class="loading" id="loading" aria-live="polite" aria-atomic="true">
+        <div class="spinner" aria-hidden="true"></div>
+        <span>Thinking...</span>
+      </div>
+    </form>
+
+    <form method="POST" class="clear-form">
+      <input type="hidden" name="clear" value="1">
+      <button type="submit" class="secondary">Clear chat & context</button>
+    </form>
+
+    {% if answer %}
+      <div class="answer-block">
+        <h2>Answer</h2>
+        <p>{{ answer | safe }}</p>
+      </div>
+
+      {% if used_chunks %}
+        <div class="sources-block">
+          <h3>Sources used</h3>
+          <ul>
+            {% for ch in used_chunks %}
+              <li>
+                <strong>{{ ch.source }}</strong><br>
+                <span class="snippet">{{ ch.text[:300] }}{% if ch.text|length > 300 %}...{% endif %}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    {% if history %}
+      <div class="history-block">
+        <h2>Conversation History</h2>
+        {% for msg in history %}
+          <div class="message {{ msg.role }}">
+            <strong>{{ 'You' if msg.role == 'user' else 'Assistant' }}:</strong>
+            <p>{{ msg.content }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const form = document.getElementById("qa-form");
+      const button = document.getElementById("ask-btn");
+      const loading = document.getElementById("loading");
+      if (!form) return;
+      form.addEventListener("submit", () => {
+        if (loading) loading.classList.add("visible");
+        if (button) {
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+        }
+      });
+    });
+  </script>
+</body>
+</html>

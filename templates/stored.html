@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stored Articles</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <div class="header-row">
+      <div>
+        <h1>Stored Articles</h1>
+        <p class="muted">Recent fetched URLs and uploaded documents saved to SQLite.</p>
+      </div>
+      <div class="nav-links">
+        <a href="{{ url_for('index') }}">← Back to Q&A</a>
+        <a href="{{ url_for('stored_export') }}">Download CSV</a>
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Source</th>
+            <th>URL/File</th>
+            <th>Date</th>
+            <th>Length</th>
+            <th>View</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if articles %}
+            {% for a in articles %}
+              <tr>
+                <td>{{ a.id }}</td>
+                <td>{{ a.source }}</td>
+                <td class="truncate">{{ a.url }}</td>
+                <td>{{ a.fetched_at }}</td>
+                <td>{{ a.content_length }}</td>
+                <td><a href="{{ url_for('stored', id=a.id) }}">Open</a></td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="muted">No stored articles yet.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if detail %}
+      <div class="detail-block">
+        <div class="detail-header">
+          <h2>Article {{ detail.id }}</h2>
+          <div class="detail-meta">
+            <span><strong>Source:</strong> {{ detail.source }}</span>
+            {% if detail.url %}<span><strong>URL/File:</strong> {{ detail.url }}</span>{% endif %}
+            <span><strong>Date:</strong> {{ detail.fetched_at }}</span>
+          </div>
+        </div>
+        <pre class="article-content">{{ detail.content }}</pre>
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>

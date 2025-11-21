@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Batch Ingest</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <div class="header-row">
+      <div>
+        <h1>Batch Ingest</h1>
+        <p class="muted">Process and store up to 10 article URLs at once.</p>
+      </div>
+      <div class="nav-links">
+        <a href="{{ url_for('index') }}">← Back to Q&A</a>
+        <a href="{{ url_for('stored') }}">Stored articles</a>
+      </div>
+    </div>
+
+    <form method="POST" class="input-form">
+      <label for="urls">Article URLs (one per line, max 10 processed):</label>
+      <textarea id="urls" name="urls" rows="6" placeholder="https://example.com/article-1&#10;https://example.com/article-2" required></textarea>
+      <button type="submit">Ingest</button>
+    </form>
+
+    {% if limit_note %}
+      <div class="answer-block">
+        <p>{{ limit_note }}</p>
+      </div>
+    {% endif %}
+
+    {% if results %}
+      <div class="answer-block">
+        <h2>Results</h2>
+        <ul class="sources-list">
+          {% for r in results %}
+            <li><strong>{{ r.url }}</strong><br><span class="muted">{{ r.status }}</span></li>
+          {% endfor %}
+        </ul>
+        <div class="nav-links">
+          <a href="{{ url_for('stored') }}">View in storage</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>
