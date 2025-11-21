@@ -62,6 +62,17 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                history TEXT
+            )
+            """
+        )
 
 
 def store_article(source: str, url: str, content: str):
@@ -116,6 +127,62 @@ def get_articles_by_ids(ids):
         conn.row_factory = sqlite3.Row
         rows = conn.execute(query, ids).fetchall()
         return [dict(r) for r in rows]
+
+
+def save_conversation(conv_id: str, title: str, history: list):
+    """Save or update a conversation."""
+    import json
+    history_json = json.dumps(history)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            INSERT INTO conversations (id, title, history, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                history = excluded.history,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (conv_id, title, history_json),
+        )
+
+
+def list_conversations(limit: int = 50):
+    """Return recent conversations."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, title, created_at, updated_at
+            FROM conversations
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_conversation(conv_id: str):
+    """Retrieve a conversation by ID."""
+    import json
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, title, created_at, updated_at, history FROM conversations WHERE id = ?",
+            (conv_id,),
+        ).fetchone()
+        if row:
+            result = dict(row)
+            result["history"] = json.loads(result["history"]) if result["history"] else []
+            return result
+        return None
+
+
+def delete_conversation(conv_id: str):
+    """Delete a conversation."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
 
 
 # Initialize storage on import so it's ready for requests.
@@ -515,6 +582,17 @@ def index():
             history = history[-10:]
         session["history"] = history
 
+        # Auto-save conversation
+        conv_id = session.get("session_id")
+        # Generate title from first question
+        if len(history) <= 2:  # First Q&A pair
+            title = question[:50] + ("..." if len(question) > 50 else "")
+        else:
+            # Keep existing title
+            existing = get_conversation(conv_id)
+            title = existing["title"] if existing else "Conversation"
+        save_conversation(conv_id, title, history)
+
 
 
     return render_template(
@@ -584,6 +662,37 @@ def stored_export():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=stored_articles.csv"},
     )
+
+
+@app.route("/conversations")
+def get_conversations():
+    """API endpoint to get list of conversations."""
+    from flask import jsonify
+    convs = list_conversations()
+    return jsonify(convs)
+
+
+@app.route("/conversation/<conv_id>")
+def load_conversation(conv_id):
+    """Load a specific conversation into the session."""
+    from flask import redirect, url_for
+    conv = get_conversation(conv_id)
+    if conv:
+        session["session_id"] = conv_id
+        session["history"] = conv["history"]
+    return redirect(url_for("index"))
+
+
+@app.route("/conversation/<conv_id>/delete", methods=["POST"])
+def delete_conversation_route(conv_id):
+    """Delete a conversation."""
+    from flask import jsonify
+    delete_conversation(conv_id)
+    # If deleting current conversation, clear session
+    if session.get("session_id") == conv_id:
+        session["session_id"] = str(uuid.uuid4())
+        session["history"] = []
+    return jsonify({"success": True})
 
 if __name__ == "__main__":
     app.run(debug=True)
