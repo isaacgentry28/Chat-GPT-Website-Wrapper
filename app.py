@@ -13,6 +13,9 @@ from pathlib import Path
 import numpy as np
 
 import faiss
+import pytesseract
+from pdf2image import convert_from_bytes
+from PIL import Image
 from flask import Flask, render_template, request, session, Response
 from werkzeug.utils import secure_filename
 
@@ -21,6 +24,11 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from docx import Document
 from pypdf import PdfReader
+
+# Optional: point pytesseract at a specific binary via env var.
+TESSERACT_CMD = os.getenv("TESSERACT_CMD")
+if TESSERACT_CMD:
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
 
 
@@ -36,7 +44,7 @@ DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "articles.db"
 
 
-ALLOWED_EXTENSIONS = {"pdf", "txt", "doc", "docx"}
+ALLOWED_EXTENSIONS = {"pdf", "txt", "doc", "docx", "jpg", "jpeg", "png"}
 
 #----------Storage (SQLite)----------#
 
@@ -116,56 +124,93 @@ init_db()
 #---------Helpers: files and URLs---------#
 
 def allowed_file(filename: str) -> bool:
-
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def clean_text(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines()]
+    lines = [line for line in lines if line]
+    return "\n".join(lines)
 
-def extract_text_from_pdf(file_storage) -> str: 
+
+def extract_text_from_pdf(file_storage) -> str:
+    # Read bytes to allow OCR fallback on scanned PDFs.
+    file_storage.seek(0)
+    pdf_bytes = file_storage.read()
 
     text = []
-    reader = PdfReader(file_storage)
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text.append(page_text)
-    return "\n".join(text)
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text.append(page_text)
+    except Exception:
+        text = []
+
+    cleaned = clean_text("\n".join(text))
+    if cleaned:
+        return cleaned
+
+    # OCR fallback for scanned PDFs
+    try:
+        images = convert_from_bytes(pdf_bytes, dpi=200)
+        ocr_texts = []
+        for img in images:
+            ocr_text = pytesseract.image_to_string(img)
+            if ocr_text:
+                ocr_texts.append(ocr_text)
+        ocr_cleaned = clean_text("\n".join(ocr_texts))
+        return ocr_cleaned or "No text extracted from scanned PDF."
+    except Exception:
+        return "No text extracted from scanned PDF."
 
 
 def extract_text_from_txt(file_storage) -> str:
     content = file_storage.read()
-
     try:
         return content.decode("utf-8")
     except UnicodeDecodeError:
         return content.decode("Latin-1", errors="ignore")
 
-def extract_text_from_docx(file_storage) ->str:
 
+def extract_text_from_docx(file_storage) -> str:
     file_bytes = file_storage.read()
     bio = io.BytesIO(file_bytes)
     doc = Document(bio)
-    return "\n".join(p.text for p in doc.paragraphs)     
+    return "\n".join(p.text for p in doc.paragraphs)
+
 
 def extract_text_from_doc(file_storage) -> str:
-
     return "Support for doc not impliemnted yet convert to pdf or docx"
 
-def extract_text_from_text(file_storage) -> str:
 
+def extract_text_from_image(file_storage) -> str:
+    try:
+        image = Image.open(file_storage)
+        text = pytesseract.image_to_string(image)
+        cleaned = clean_text(text)
+        return cleaned or "No text extracted from image."
+    except Exception:
+        return "No text extracted from image."
+
+
+def extract_text_from_text(file_storage) -> str:
     ext = file_storage.filename.rsplit(".", 1)[1].lower()
 
     if ext == "pdf":
         return extract_text_from_pdf(file_storage)
     elif ext == "docx":
-        return extract_text_from_docx(file_storage) 
+        return extract_text_from_docx(file_storage)
     elif ext == "txt":
         return extract_text_from_txt(file_storage)
     elif ext == "doc":
         return extract_text_from_doc(file_storage)
+    elif ext in {"png", "jpg", "jpeg"}:
+        return extract_text_from_image(file_storage)
     else:
         return ""  # Unsupported file type
-    
+
 
 def fetch_text_from_url(url: str) -> str:
     try:
